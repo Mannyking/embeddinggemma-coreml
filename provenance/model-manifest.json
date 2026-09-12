@@ -1,0 +1,109 @@
+{
+  "repository": "google/embeddinggemma-300m",
+  "revision": "57c266a740f537b4dc058e1b0cda161fd15afa75",
+  "verification": "Local content matches download metadata ETags; metadata is not independently authenticated.",
+  "files": [
+    {
+      "path": "1_Pooling/config.json",
+      "bytes": 312,
+      "sha256": "35bbd47d7fdf1e378db6130bcc668b09d1aa67a7bbf7c8f89a9c71f4cc8ebcc6",
+      "download_etag": "70ac42bce1699d89f19c011133cf97dfada83127"
+    },
+    {
+      "path": "2_Dense/config.json",
+      "bytes": 134,
+      "sha256": "0661e5e0b67b8f8408ab31ab5d073a78972fc1dc24a49992a64796557e4f9e53",
+      "download_etag": "be375637bcca11d03dbf71bf83914fd48e8c55ee"
+    },
+    {
+      "path": "2_Dense/model.safetensors",
+      "bytes": 9437272,
+      "sha256": "c327f2acb00149676ade24a75e11eb6ebbd367f9ee050267ba56829d2979f702",
+      "download_etag": "c327f2acb00149676ade24a75e11eb6ebbd367f9ee050267ba56829d2979f702"
+    },
+    {
+      "path": "3_Dense/config.json",
+      "bytes": 134,
+      "sha256": "8c4575c49353d63fb907878856ba94384635c3b2711fd5b7439e7f71888c66fc",
+      "download_etag": "732de4b90bee82e9050fd5467c4aa5e9d088d004"
+    },
+    {
+      "path": "3_Dense/model.safetensors",
+      "bytes": 9437272,
+      "sha256": "ffb6cc5162e11e2ce6bc2367e121ee3bbbc4e82e1ee26826bd7573d4948d81b8",
+      "download_etag": "ffb6cc5162e11e2ce6bc2367e121ee3bbbc4e82e1ee26826bd7573d4948d81b8"
+    },
+    {
+      "path": "README.md",
+      "bytes": 18677,
+      "sha256": "e53702f564878ea87085742fe3f485872bef81317086e9ffe37125a81809772a",
+      "download_etag": "bb84d064c9b5cb7ab468a6c56b00717181eab744"
+    },
+    {
+      "path": "added_tokens.json",
+      "bytes": 35,
+      "sha256": "50b2f405ba56a26d4913fd772089992252d7f942123cc0a034d96424221ba946",
+      "download_etag": "e17bde03d42feda32d1abfca6d3b598b9a020df7"
+    },
+    {
+      "path": "config.json",
+      "bytes": 1488,
+      "sha256": "8f863f76e2d9c710cc833dc92efa898c9adfd41031c786507cc6b0e49c2e3e68",
+      "download_etag": "aca32ef8dacddfbe15dc12c0427a9153d5c2b0f4"
+    },
+    {
+      "path": "config_sentence_transformers.json",
+      "bytes": 997,
+      "sha256": "8eadac15526f83d8950aa8d962a7f4f6e3d678bea71689960194561f33a5f64f",
+      "download_etag": "3552ab1b79dc8571d0ecf200db12e5208eda5bdd"
+    },
+    {
+      "path": "generation_config.json",
+      "bytes": 133,
+      "sha256": "1fb1efd221c1ca88a736d1b36cb47d754c177677e222acb3b1e5424c5d664870",
+      "download_etag": "562150c0903db92148e95aeed8292bbfbf3c93d9"
+    },
+    {
+      "path": "model.safetensors",
+      "bytes": 1211486072,
+      "sha256": "cbf5a78393b6a033e0b8a63a57549964f7ed5c6fbeb4ba0694214f36123f2fd2",
+      "download_etag": "cbf5a78393b6a033e0b8a63a57549964f7ed5c6fbeb4ba0694214f36123f2fd2"
+    },
+    {
+      "path": "modules.json",
+      "bytes": 573,
+      "sha256": "5b5649645fb756dad1a8e2efe7872d3bb32bc00b93c95f276dd17f474eedccdc",
+      "download_etag": "bb668a9a3aacb3090f2f8e73f870f556569f9066"
+    },
+    {
+      "path": "sentence_bert_config.json",
+      "bytes": 58,
+      "sha256": "5ea26221ce733ace29a3897360e7c6ac8816b2ca0f7306657d69e594fece7325",
+      "download_etag": "b37b06424c6e0c0e880b24f3e313ebd85b601dcc"
+    },
+    {
+      "path": "special_tokens_map.json",
+      "bytes": 662,
+      "sha256": "2f7b0adf4fb469770bb1490e3e35df87b1dc578246c5e7e6fc76ecf33213a397",
+      "download_etag": "1a6193244714d3d78be48666cb02cdbfac62ad86"
+    },
+    {
+      "path": "tokenizer.json",
+      "bytes": 33385008,
+      "sha256": "6852f8d561078cc0cebe70ca03c5bfdd0d60a45f9d2e0e1e4cc05b68e9ec329e",
+      "download_etag": "6852f8d561078cc0cebe70ca03c5bfdd0d60a45f9d2e0e1e4cc05b68e9ec329e"
+    },
+    {
+      "path": "tokenizer.model",
+      "bytes": 4689074,
+      "sha256": "1299c11d7cf632ef3b4e11937501358ada021bbdf7c47638d13c0ee982f2e79c",
+      "download_etag": "1299c11d7cf632ef3b4e11937501358ada021bbdf7c47638d13c0ee982f2e79c"
+    },
+    {
+      "path": "tokenizer_config.json",
+      "bytes": 1155346,
+      "sha256": "9076840490613047bc9115963ee96b7702018b0d26ba644240bf856efda93118",
+      "download_etag": "33786d29ae85b05bc37772cd10876d66afbe905e"
+    }
+  ]
+}

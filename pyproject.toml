@@ -1,0 +1,10 @@
+[project]
+name = "embeddinggemma-coreml"
+version = "0.0.1"
+dependencies = [
+    "coremltools==9.0",
+    "numpy==1.26.4",
+    "sentence-transformers==5.1.2",
+    "torch==2.7.0",
+    "transformers==4.57.1",
+]
