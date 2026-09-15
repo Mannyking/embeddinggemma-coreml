@@ -1,0 +1,159 @@
+"""Export a fixed (1, 128) float32 Core ML artifact with checked tracing."""
+
+import hashlib
+import importlib.metadata
+import json
+import os
+from pathlib import Path
+import platform
+import argparse
+import traceback
+
+os.environ["HF_HUB_OFFLINE"] = "1"
+
+import coremltools as ct
+import numpy as np
+import torch
+from sentence_transformers import SentenceTransformer
+
+ROOT = Path(__file__).resolve().parents[1]
+OUTPUT = ROOT / "artifacts/coreml-f32-128"
+REFERENCE = ROOT / "artifacts/reference-f32"
+
+
+def sha256(path):
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+class Embedder(torch.nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.backbone = model[0].auto_model
+        self.head = torch.nn.ModuleList(list(model.children())[1:])
+        if not self.backbone.config.use_bidirectional_attention or self.backbone.config.sliding_window < 128:
+            raise ValueError("This wrapper requires bidirectional attention and a window of at least 128")
+
+    def attention_masks(self, attention_mask):
+        # Fixed 128-token input: all pairs lie within the local window. Mask
+        # keys (including for padded query positions), exactly as upstream does.
+        allowed = attention_mask[:, None, None, :].to(torch.bool).expand(-1, 1, 128, -1)
+        mask = torch.where(allowed, 0.0, torch.finfo(torch.float32).min)
+        return {"full_attention": mask, "sliding_attention": mask}
+
+    def forward(self, input_ids, attention_mask):
+        tokens = self.backbone(input_ids=input_ids, attention_mask=self.attention_masks(attention_mask),
+                               use_cache=False, return_dict=False)[0]
+        features = {"token_embeddings": tokens, "attention_mask": attention_mask}
+        for module in self.head:
+            features = module(features)
+        return features["sentence_embedding"]
+
+
+def main():
+    if OUTPUT.exists():
+        raise FileExistsError(f"Move the existing output directory before rerunning: {OUTPUT}")
+    report = {
+        "status": "running", "stage": "verify_inputs",
+        "python": platform.python_version(), "platform": platform.platform(),
+        "packages": {name: importlib.metadata.version(name) for name in
+                     ("torch", "transformers", "sentence-transformers", "coremltools", "numpy")},
+        "script_sha256": sha256(Path(__file__)),
+        "input_shape": [1, 128], "precision": "float32", "compute_units": "CPU_ONLY",
+        "limitations": "Only eight short fixtures at length 128; no long-window or device validation.",
+    }
+    OUTPUT.mkdir(parents=True)
+    try:
+        run(report)
+        report["status"] = "exported"
+        report["artifact_parity"] = "Not assessed; run assess_embeddinggemma_coreml_f32.py"
+    except Exception as error:
+        report["status"] = "failed"
+        report["error"] = f"{type(error).__name__}: {error}"
+        report["traceback"] = traceback.format_exc()
+        raise
+    finally:
+        (OUTPUT / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+
+
+def run(report):
+    metadata = json.loads((REFERENCE / "metadata.json").read_text())
+    manifest_path = ROOT / "provenance/model-manifest.json"
+    if sha256(manifest_path) != metadata["model_manifest_sha256"]:
+        raise ValueError("Reference model manifest has changed")
+    if sha256(REFERENCE / "tensors.npz") != metadata["tensors_sha256"]:
+        raise ValueError("Reference tensor hash mismatch")
+    manifest = json.loads(manifest_path.read_text())
+    for item in manifest["files"]:
+        if sha256(ROOT / "models/embeddinggemma-300m" / item["path"]) != item["sha256"]:
+            raise ValueError(f"Model hash mismatch: {item['path']}")
+    report["revision"] = manifest["revision"]
+    report["reference_metadata_sha256"] = sha256(REFERENCE / "metadata.json")
+    with np.load(REFERENCE / "tensors.npz", allow_pickle=False) as data:
+        ids = data["padded_128__input_ids"].astype(np.int32)
+        masks = data["padded_128__attention_mask"].astype(np.int32)
+        expected = data["padded_128__embedding"].copy()
+    names = metadata["padded_128_order"]
+    if ids.shape != (8, 128) or masks.shape != ids.shape or expected.shape != (8, 768):
+        raise ValueError("Unexpected fixture shapes")
+    inputs = [(torch.from_numpy(ids[i:i+1]), torch.from_numpy(masks[i:i+1])) for i in range(len(names))]
+
+    report["stage"] = "load_reference"
+    print("Loading the complete float32 reference pipeline", flush=True)
+    model = SentenceTransformer(
+        str(ROOT / "models/embeddinggemma-300m"), device="cpu", local_files_only=True,
+        model_kwargs={"torch_dtype": torch.float32, "attn_implementation": "eager"},
+    )
+    model.eval()
+    model[0].auto_model.config.use_cache = False
+    wrapper = Embedder(model).eval()
+    with torch.no_grad():
+        report["stage"] = "check_masks"
+        from transformers.masking_utils import create_causal_mask, create_sliding_window_causal_mask
+        from transformers.models.gemma3.modeling_gemma3 import _bidirectional_window_overlay
+        for _, mask in inputs:
+            kwargs = dict(config=model[0].auto_model.config, input_embeds=torch.zeros(1, 128, 768),
+                          attention_mask=mask, cache_position=torch.arange(128), past_key_values=None)
+            original = {
+                "full_attention": create_causal_mask(**kwargs, or_mask_function=lambda *args: torch.tensor(True)),
+                "sliding_attention": create_sliding_window_causal_mask(
+                    **kwargs, or_mask_function=_bidirectional_window_overlay(model[0].auto_model.config.sliding_window)),
+            }
+            for key, value in wrapper.attention_masks(mask).items():
+                torch.testing.assert_close(value, original[key], atol=0, rtol=0)
+        report["mask_equality"] = "Exact equality with upstream full/sliding masks for all eight fixtures"
+        report["stage"] = "check_wrapper"
+        for i, args in enumerate(inputs):
+            np.testing.assert_allclose(wrapper(*args).numpy(), expected[i:i+1], atol=1e-5, rtol=1e-4)
+
+        report["stage"] = "trace"
+        print("Tracing fixed-shape inputs with verified tensor attention masks", flush=True)
+        traced = torch.jit.trace(wrapper, inputs[0], check_trace=False)
+        # Verify distinct texts and padding masks, not just the tracing example.
+        report["stage"] = "check_trace"
+        for i, args in enumerate(inputs):
+            np.testing.assert_allclose(traced(*args).numpy(), expected[i:i+1], atol=1e-5, rtol=1e-4)
+
+    report["stage"] = "convert"
+    print("Converting to a float32 ML Program", flush=True)
+    converted = ct.convert(
+        traced, convert_to="mlprogram",
+        inputs=[ct.TensorType(name="input_ids", shape=(1, 128), dtype=np.int32),
+                ct.TensorType(name="attention_mask", shape=(1, 128), dtype=np.int32)],
+        outputs=[ct.TensorType(name="embedding", dtype=np.float32)],
+        compute_precision=ct.precision.FLOAT32, compute_units=ct.ComputeUnit.CPU_ONLY,
+    )
+    package = OUTPUT / "EmbeddingGemmaF32.mlpackage"
+    converted.save(str(package))
+    report["package_hashes"] = {p.relative_to(package).as_posix(): sha256(p)
+                                for p in sorted(package.rglob("*")) if p.is_file()}
+    report["specification_version"] = converted.get_spec().specificationVersion
+
+    print(f"Export saved: {package}. Run assess_embeddinggemma_coreml_f32.py to assess it.", flush=True)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output-dir", type=Path, default=OUTPUT)
+    OUTPUT = parser.parse_args().output_dir.resolve()
+    main()

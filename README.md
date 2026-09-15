@@ -16,6 +16,102 @@ This reusable offline check loads the local model on CPU in float32, checks
 embedding shape, finite values and unit norms, and verifies a simple retrieval
 ranking. Model revision and artifact hashes are recorded separately in `provenance/model-manifest.json`; dependencies are locked in `uv.lock`.
 
+## Float32 reference fixtures
+
+The initial assessment passed with Mars ranked first (0.645413), followed by
+Venus (0.259444) and Saturn (0.232551), as reported from the manual run.
+
+```sh
+.venv/bin/python scripts/capture_reference_f32.py
+```
+
+This captures token IDs, attention masks and full embeddings in
+`artifacts/reference-f32/tensors.npz`, with text, prefixes, exact environment,
+hashes and retrieval rankings in `metadata.json`. It covers multilingual inputs,
+511/512/513-token boundaries, the 2048-token limit, and a batch padded to 128
+tokens for the first fixed-length export. It checks the full module pipeline
+against the public encode API and compares padded with unpadded results.
+
+Our input policy rejects empty/whitespace-only content and inputs longer than
+2048 tokens including the prefix and special tokens, without truncation.
+The script verifies model hashes before inference and refuses to overwrite an
+existing fixture directory. The saved fixture set has been inspected: all 12
+cases are present, embeddings are finite, and the tensor hash matches. These
+reference checks do not establish Core ML parity or validate attention masks
+independently; those remain part of artifact evaluation.
+
+## First Core ML export
+
+```sh
+.venv/bin/python scripts/export_embeddinggemma_f32.py
+```
+
+This attempts a complete float32 ML Program with two int32 inputs of shape
+`(1, 128)` (token IDs and attention mask), producing one `(1, 768)` embedding.
+It checks attention masks, the wrapper and the trace against the reference,
+then saves the Core ML package. Artifact comparison is a separate step. Tokenization and task prefixes remain outside the artifact.
+
+Outputs go to `artifacts/coreml-f32-128/`. `report.json` records the stage,
+errors, versions and package hashes. Successful export reports `exported`,
+which does not indicate artifact parity. Existing outputs are
+never overwritten.
+
+## Assess the saved Core ML artifact
+
+Run independently of conversion, using the existing verified package:
+
+```sh
+.venv/bin/python scripts/assess_embeddinggemma_coreml_f32.py \
+  artifacts/coreml-f32-128-verified/EmbeddingGemmaF32.mlpackage
+```
+
+For a new export, pass its `.mlpackage` path instead. The assessor loads the
+saved artifact on CPU and compares all eight short fixtures, including vector
+agreement, normalization and retrieval ranking. It does not load the PyTorch
+reference model or rerun conversion. Results and embeddings go to
+`artifacts/coreml-f32-128-assessment/`; use `--output-dir` to choose a fresh
+location on subsequent runs. Existing reports are preserved.
+
+Initial artifact thresholds are elementwise `atol=1e-4`,
+`rtol=1e-3`, cosine agreement at least `0.9999`, and norm error at most `1e-4`;
+the three-document retrieval ranking must also match. Thresholds are provisional
+experiment criteria, not established quality guarantees.
+
+The existing `coreml-f32-128-verified` artifact passed the original combined
+export/assessment run, with maximum absolute error approximately `3.73e-7`. Passing these short fixtures does not validate longer inputs,
+sliding-window boundaries, iOS deployment or Neural Engine placement.
+
+## 512-token variant
+
+Export separately, then assess the saved package:
+
+```sh
+.venv/bin/python scripts/export_embeddinggemma_f32_512.py
+.venv/bin/python scripts/assess_embeddinggemma_coreml_f32.py \
+  artifacts/coreml-f32-512/EmbeddingGemmaF32.mlpackage --sequence-length 512
+```
+
+The exporter uses the same original weights and produces fixed `(1, 512)`
+inputs. It prepares ten fixtures (eight short examples plus 511 and 512 tokens),
+right-pads their saved token IDs, and runs the original pipeline on those exact
+inputs. These reference vectors are saved in `reference_512.npz` alongside the
+package, with their hash and ordering in the export report. The assessor verifies
+these records before comparing Core ML outputs. Keep the export directory intact.
+
+Transformers converts the configured bidirectional window of 512 into an
+exclusive distance bound of 257 (up to 256 positions in each direction).
+The 512 exporter therefore uses distinct full and sliding attention masks,
+and checks both against upstream for every fixture before tracing.
+Inputs longer than 512 are
+excluded, never truncated to fit. The original 128 exporter remains available;
+the assessor defaults to 128 for existing commands.
+
+The current saved 512-token package has been exported and independently passed
+the CPU-only artifact-parity assessment, including the 511- and 512-token
+fixtures. Assessment outputs default to `artifacts/coreml-f32-512-assessment/`.
+Both scripts accept `--output-dir` for fresh output locations and refuse to
+overwrite existing directories.
+
 ## Context and goal
 
 The existing app is at `../../ios-dev/CairnSpike`; read its
