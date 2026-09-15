@@ -12,7 +12,7 @@ from sentence_transformers import SentenceTransformer
 
 
 def main():
-    model_path = Path(__file__).resolve().parents[1] / "models/embeddinggemma-300m"
+    model_path = Path(__file__).resolve().parents[2] / "models/embeddinggemma-300m"
     if not model_path.is_dir():
         raise FileNotFoundError(f"Download the pinned checkpoint to {model_path} first")
 

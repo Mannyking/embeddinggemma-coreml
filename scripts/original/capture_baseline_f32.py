@@ -1,4 +1,4 @@
-"""Save offline CPU float32 fixtures for later Core ML artifact comparisons."""
+"""Save an offline float32 baseline from the original model."""
 
 import hashlib
 import importlib.metadata
@@ -13,9 +13,9 @@ import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 MODEL = ROOT / "models/embeddinggemma-300m"
-OUTPUT = ROOT / "artifacts/reference-f32"
+OUTPUT = ROOT / "artifacts/baseline-f32"
 LIMIT = 2048
 
 
@@ -49,9 +49,9 @@ def exact_length_text(model, target):
 def main():
     if OUTPUT.exists():
         raise FileExistsError(f"Preserve or move the existing fixture directory before rerunning: {OUTPUT}")
-    manifest_path = ROOT / "provenance/model-manifest.json"
-    manifest = json.loads(manifest_path.read_text())
-    for item in manifest["files"]:
+    model_source_path = ROOT / "model-source.json"
+    model_source = json.loads(model_source_path.read_text())
+    for item in model_source["files"]:
         if sha256(MODEL / item["path"]) != item["sha256"]:
             raise ValueError(f"Model hash mismatch: {item['path']}")
 
@@ -132,9 +132,9 @@ def main():
     if ranking[0] != "doc_mars":
         raise ValueError(f"Unexpected retrieval ranking: {ranking}")
     OUTPUT.mkdir(parents=True)
-    np.savez_compressed(OUTPUT / "tensors.npz", **arrays)
+    np.savez_compressed(OUTPUT / "fixtures.npz", **arrays)
     metadata = {
-        "revision": manifest["revision"], "model_manifest_sha256": sha256(manifest_path),
+        "revision": model_source["revision"], "model_source_sha256": sha256(model_source_path),
         "script_sha256": sha256(Path(__file__)), "uv_lock_sha256": sha256(ROOT / "uv.lock"),
         "python": platform.python_version(), "platform": platform.platform(),
         "packages": {d.metadata["Name"]: d.version for d in importlib.metadata.distributions()},
@@ -146,7 +146,7 @@ def main():
         "validation_tolerances": {"unit_norm_atol": 1e-5, "encode_atol": 1e-6,
                                   "encode_rtol": 1e-5, "padding_atol": 1e-5, "padding_rtol": 1e-4},
         "retrieval": {"documents": documents, "scores": scores.tolist(), "ranking": ranking},
-        "tensors_sha256": sha256(OUTPUT / "tensors.npz"),
+        "fixtures_sha256": sha256(OUTPUT / "fixtures.npz"),
     }
     (OUTPUT / "metadata.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n")
     print(f"Saved validated reference fixtures to {OUTPUT}")

@@ -16,9 +16,9 @@ import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 
-ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / "artifacts/coreml-f32-512"
-REFERENCE = ROOT / "artifacts/reference-f32"
+ROOT = Path(__file__).resolve().parents[2]
+OUTPUT = ROOT / "artifacts/coreml/f32-512"
+BASELINE = ROOT / "artifacts/baseline-f32"
 
 
 def sha256(path):
@@ -79,22 +79,25 @@ def main():
         report["traceback"] = traceback.format_exc()
         raise
     finally:
-        (OUTPUT / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+        (OUTPUT / "export-report.json").write_text(json.dumps(report, indent=2) + "\n")
 
 
 def run(report):
-    metadata = json.loads((REFERENCE / "metadata.json").read_text())
-    manifest_path = ROOT / "provenance/model-manifest.json"
-    if sha256(manifest_path) != metadata["model_manifest_sha256"]:
-        raise ValueError("Reference model manifest has changed")
-    if sha256(REFERENCE / "tensors.npz") != metadata["tensors_sha256"]:
-        raise ValueError("Reference tensor hash mismatch")
-    manifest = json.loads(manifest_path.read_text())
-    for item in manifest["files"]:
+    metadata = json.loads((BASELINE / "metadata.json").read_text())
+    model_source_path = ROOT / "model-source.json"
+    expected_source_hash = metadata.get("model_source_sha256", metadata.get("model_manifest_sha256"))
+    if sha256(model_source_path) != expected_source_hash:
+        raise ValueError("Baseline model-source record has changed")
+    fixtures_path = BASELINE / "fixtures.npz"
+    expected_fixtures_hash = metadata.get("fixtures_sha256", metadata.get("tensors_sha256"))
+    if sha256(fixtures_path) != expected_fixtures_hash:
+        raise ValueError("Baseline fixture hash mismatch")
+    model_source = json.loads(model_source_path.read_text())
+    for item in model_source["files"]:
         if sha256(ROOT / "models/embeddinggemma-300m" / item["path"]) != item["sha256"]:
             raise ValueError(f"Model hash mismatch: {item['path']}")
-    report["revision"] = manifest["revision"]
-    report["reference_metadata_sha256"] = sha256(REFERENCE / "metadata.json")
+    report["revision"] = model_source["revision"]
+    report["baseline_metadata_sha256"] = sha256(BASELINE / "metadata.json")
     cases = [case for case in metadata["cases"] if case["token_count"] <= 512]
     names = [case["id"] for case in cases]
     if metadata["padding_side"] != "right":
@@ -103,7 +106,7 @@ def run(report):
     ids = np.full((len(names), 512), config["pad_token_id"], dtype=np.int32)
     masks = np.zeros_like(ids)
     unpadded = []
-    with np.load(REFERENCE / "tensors.npz", allow_pickle=False) as data:
+    with np.load(fixtures_path, allow_pickle=False) as data:
         for i, name in enumerate(names):
             tokens = data[f"{name}__input_ids"][0]
             ids[i, :len(tokens)] = tokens
@@ -125,7 +128,7 @@ def run(report):
     with torch.no_grad():
         # Capture the unmodified upstream pipeline on precisely the padded
         # inputs used by Core ML, before testing the export wrapper.
-        report["stage"] = "capture_padded_reference"
+        report["stage"] = "capture_padded_fixtures"
         expected = np.concatenate([
             model({"input_ids": token_ids, "attention_mask": mask})["sentence_embedding"].numpy()
             for token_ids, mask in inputs
@@ -134,9 +137,9 @@ def run(report):
         if not np.isfinite(expected).all():
             raise ValueError("Non-finite reference embeddings")
         np.testing.assert_allclose(np.linalg.norm(expected, axis=1), 1.0, atol=1e-5, rtol=0)
-        reference_path = OUTPUT / "reference_512.npz"
-        np.savez_compressed(reference_path, input_ids=ids, attention_mask=masks, embedding=expected)
-        report["padded_reference_sha256"] = sha256(reference_path)
+        padded_fixtures_path = OUTPUT / "padded-fixtures.npz"
+        np.savez_compressed(padded_fixtures_path, input_ids=ids, attention_mask=masks, embedding=expected)
+        report["padded_fixtures_sha256"] = sha256(padded_fixtures_path)
         report["stage"] = "check_masks"
         from transformers.masking_utils import create_causal_mask, create_sliding_window_causal_mask
         from transformers.models.gemma3.modeling_gemma3 import _bidirectional_window_overlay

@@ -16,9 +16,9 @@ import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 
-ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / "artifacts/coreml-f32-128"
-REFERENCE = ROOT / "artifacts/reference-f32"
+ROOT = Path(__file__).resolve().parents[2]
+OUTPUT = ROOT / "artifacts/coreml/f32-128"
+BASELINE = ROOT / "artifacts/baseline-f32"
 
 
 def sha256(path):
@@ -73,23 +73,26 @@ def main():
         report["traceback"] = traceback.format_exc()
         raise
     finally:
-        (OUTPUT / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+        (OUTPUT / "export-report.json").write_text(json.dumps(report, indent=2) + "\n")
 
 
 def run(report):
-    metadata = json.loads((REFERENCE / "metadata.json").read_text())
-    manifest_path = ROOT / "provenance/model-manifest.json"
-    if sha256(manifest_path) != metadata["model_manifest_sha256"]:
-        raise ValueError("Reference model manifest has changed")
-    if sha256(REFERENCE / "tensors.npz") != metadata["tensors_sha256"]:
-        raise ValueError("Reference tensor hash mismatch")
-    manifest = json.loads(manifest_path.read_text())
-    for item in manifest["files"]:
+    metadata = json.loads((BASELINE / "metadata.json").read_text())
+    model_source_path = ROOT / "model-source.json"
+    expected_source_hash = metadata.get("model_source_sha256", metadata.get("model_manifest_sha256"))
+    if sha256(model_source_path) != expected_source_hash:
+        raise ValueError("Baseline model-source record has changed")
+    fixtures_path = BASELINE / "fixtures.npz"
+    expected_fixtures_hash = metadata.get("fixtures_sha256", metadata.get("tensors_sha256"))
+    if sha256(fixtures_path) != expected_fixtures_hash:
+        raise ValueError("Baseline fixture hash mismatch")
+    model_source = json.loads(model_source_path.read_text())
+    for item in model_source["files"]:
         if sha256(ROOT / "models/embeddinggemma-300m" / item["path"]) != item["sha256"]:
             raise ValueError(f"Model hash mismatch: {item['path']}")
-    report["revision"] = manifest["revision"]
-    report["reference_metadata_sha256"] = sha256(REFERENCE / "metadata.json")
-    with np.load(REFERENCE / "tensors.npz", allow_pickle=False) as data:
+    report["revision"] = model_source["revision"]
+    report["baseline_metadata_sha256"] = sha256(BASELINE / "metadata.json")
+    with np.load(fixtures_path, allow_pickle=False) as data:
         ids = data["padded_128__input_ids"].astype(np.int32)
         masks = data["padded_128__attention_mask"].astype(np.int32)
         expected = data["padded_128__embedding"].copy()
