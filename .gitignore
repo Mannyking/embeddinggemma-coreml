@@ -1,5 +1,7 @@
 .venv/
-models/
+/models/*
+!/models/receipts/
+!/models/receipts/*.json
 artifacts/
 datasets/
 __pycache__/

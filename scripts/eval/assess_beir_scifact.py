@@ -16,6 +16,7 @@ from transformers import AutoTokenizer
 
 ROOT = Path(__file__).resolve().parents[2]
 MODEL = ROOT / "models" / "embeddinggemma-300m"
+MODEL_RECEIPT = ROOT / "models" / "receipts" / "embeddinggemma-300m.json"
 LENGTH = 512
 DATASET = "scifact"
 DATASET_URL = "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/scifact.zip"
@@ -35,7 +36,7 @@ def files_sha256(directory):
 
 
 def verify_model():
-    source_path = ROOT / "model-source.json"
+    source_path = MODEL_RECEIPT
     source = json.loads(source_path.read_text())
     for item in source["files"]:
         if sha256(MODEL / item["path"]) != item["sha256"]:

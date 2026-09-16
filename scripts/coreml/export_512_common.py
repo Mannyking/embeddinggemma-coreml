@@ -20,6 +20,7 @@ from sentence_transformers import SentenceTransformer
 
 ROOT = Path(__file__).resolve().parents[2]
 BASELINE = ROOT / "artifacts/baseline-f32"
+MODEL_RECEIPT = ROOT / "models/receipts/embeddinggemma-300m.json"
 
 
 def sha256(path):
@@ -96,7 +97,7 @@ def main(output, precision, entrypoint, minimum_deployment_target=None, deployme
 
 def run(output, report, precision, minimum_deployment_target=None):
     metadata = json.loads((BASELINE / "metadata.json").read_text())
-    model_source_path = ROOT / "model-source.json"
+    model_source_path = MODEL_RECEIPT
     expected_source_hash = metadata.get("model_source_sha256", metadata.get("model_manifest_sha256"))
     if sha256(model_source_path) != expected_source_hash:
         raise ValueError("Baseline model-source record has changed")

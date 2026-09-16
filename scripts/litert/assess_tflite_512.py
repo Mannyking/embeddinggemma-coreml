@@ -21,11 +21,26 @@ ROOT = Path(__file__).resolve().parents[2]
 BASELINE = ROOT / "artifacts/baseline-f32"
 F32_SOURCE = ROOT / "artifacts/coreml/f32-512-ios18"
 DEFAULT_MODEL = ROOT / "models/embeddinggemma-300M_seq512_mixed-precision.tflite"
+MODEL_RECEIPT = ROOT / "models/receipts/litert-512-mixed-precision.json"
 
 
 def sha256(path):
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def verify_litert_model(model):
+    source_path = MODEL_RECEIPT
+    receipt = json.loads(source_path.read_text())
+    if receipt.get("id") != "litert-512-mixed-precision":
+        raise ValueError("Unexpected LiteRT model receipt")
+    if model.stat().st_size != receipt["bytes"]:
+        raise ValueError("LiteRT model size differs from its recorded receipt")
+    if sha256(model) != receipt["sha256"]:
+        raise ValueError("LiteRT model hash differs from its recorded receipt")
+    return {"id": receipt["id"], "repository": receipt["repository"],
+            "revision": receipt["revision"], "source_url": receipt["url"],
+            "model_receipt_sha256": sha256(source_path), "model_sha256": receipt["sha256"]}
 
 
 def metrics(actual, expected):
@@ -87,9 +102,11 @@ def main():
         raise FileNotFoundError(model)
     if output.exists():
         raise FileExistsError(f"Choose a new assessment output directory: {output}")
+    model_receipt = verify_litert_model(model)
     report = {
         "status": "running", "stage": "verify_inputs", "model": str(model),
         "model_sha256": sha256(model), "model_size_bytes": model.stat().st_size,
+        "model_receipt": model_receipt,
         "python": platform.python_version(), "platform": platform.platform(),
         "packages": {name: importlib.metadata.version(name) for name in ("ai-edge-litert", "numpy")},
         "script_sha256": sha256(Path(__file__)),

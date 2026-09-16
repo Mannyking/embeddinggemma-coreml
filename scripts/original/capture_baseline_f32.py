@@ -15,6 +15,7 @@ from sentence_transformers import SentenceTransformer
 
 ROOT = Path(__file__).resolve().parents[2]
 MODEL = ROOT / "models/embeddinggemma-300m"
+MODEL_RECEIPT = ROOT / "models/receipts/embeddinggemma-300m.json"
 OUTPUT = ROOT / "artifacts/baseline-f32"
 LIMIT = 2048
 
@@ -49,7 +50,7 @@ def exact_length_text(model, target):
 def main():
     if OUTPUT.exists():
         raise FileExistsError(f"Preserve or move the existing fixture directory before rerunning: {OUTPUT}")
-    model_source_path = ROOT / "model-source.json"
+    model_source_path = MODEL_RECEIPT
     model_source = json.loads(model_source_path.read_text())
     for item in model_source["files"]:
         if sha256(MODEL / item["path"]) != item["sha256"]:

@@ -1,0 +1,23 @@
+{
+  "id": "litert-512-mixed-precision",
+  "repository": "litert-community/embeddinggemma-300m",
+  "revision": "main",
+  "revision_note": "The upstream main ref is mutable; sha256 identifies the assessed local artifact.",
+  "url": "https://huggingface.co/litert-community/embeddinggemma-300m/blob/main/embeddinggemma-300M_seq512_mixed-precision.tflite",
+  "license": "gemma",
+  "path": "models/embeddinggemma-300M_seq512_mixed-precision.tflite",
+  "bytes": 179132472,
+  "sha256": "ad09e81557203cb0e177abf9bf8727dfe138a7d394aa0f70f0b2ed16432e121a",
+  "input_contract": {
+    "input_ids": {
+      "shape": [1, 512],
+      "dtype": "int32"
+    }
+  },
+  "output_contract": {
+    "embedding": {
+      "shape": [1, 768],
+      "dtype": "float32"
+    }
+  }
+}
