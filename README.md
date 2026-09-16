@@ -28,7 +28,18 @@ the best input length for product content.
 ## Current Result
 
 The current 512-token mixed-FP16 package is about **592 MB**, compared with
-about **1.2 GB** for the float32 package—roughly half the size.
+about **1.2 GB** for the float32 package.
+
+The retained iOS 18 post-training 4-bit (linear-int4/int8-attention) package
+is about 216 MB.
+
+## Platform Compatibility
+
+The existing F32 and mixed-FP16 Core ML packages require iOS/iPadOS 15 or
+newer, or macOS 12 or newer. The F32 iOS 18 source package and the int4
+candidate require iOS/iPadOS 18 or newer, or macOS 15 or newer. The same model
+package works across those Apple platforms; the newer target is required for
+the int4 compression feature.
 
 The conversion and validation details are recorded in `CONTEXT.md`.
 

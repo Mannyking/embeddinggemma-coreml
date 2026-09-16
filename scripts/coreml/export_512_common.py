@@ -60,7 +60,7 @@ class Embedder(torch.nn.Module):
         return features["sentence_embedding"]
 
 
-def main(output, precision, entrypoint):
+def main(output, precision, entrypoint, minimum_deployment_target=None, deployment_target_name=None):
     output = output.resolve()
     if precision not in ("float32", "float16"):
         raise ValueError(f"Unsupported conversion precision: {precision}")
@@ -75,13 +75,14 @@ def main(output, precision, entrypoint):
         "export_implementation": str(Path(__file__)),
         "export_implementation_sha256": sha256(Path(__file__)),
         "input_shape": [1, 512], "precision": precision, "compute_units": "CPU_ONLY",
+        "minimum_deployment_target": deployment_target_name,
         "baseline_precision": "float32", "output_dtype": "float32",
         "fp16_policy": "mixed" if precision == "float16" else None,
         "limitations": "Short, 511- and 512-token fixtures; no sequences beyond 512 tokens or device validation.",
     }
     output.mkdir(parents=True)
     try:
-        run(output, report, precision)
+        run(output, report, precision, minimum_deployment_target)
         report["status"] = "exported"
         report["artifact_parity"] = "Not assessed; run scripts/coreml/assess_f32.py"
     except Exception as error:
@@ -93,7 +94,7 @@ def main(output, precision, entrypoint):
         (output / "export-report.json").write_text(json.dumps(report, indent=2) + "\n")
 
 
-def run(output, report, precision):
+def run(output, report, precision, minimum_deployment_target=None):
     metadata = json.loads((BASELINE / "metadata.json").read_text())
     model_source_path = ROOT / "model-source.json"
     expected_source_hash = metadata.get("model_source_sha256", metadata.get("model_manifest_sha256"))
@@ -205,6 +206,7 @@ def run(output, report, precision):
         outputs=[ct.TensorType(name="embedding", dtype=np.float32)],
         compute_precision=compute_precision,
         compute_units=ct.ComputeUnit.CPU_ONLY,
+        minimum_deployment_target=minimum_deployment_target,
     )
     package = output / ("EmbeddingGemmaF16.mlpackage" if precision == "float16" else "EmbeddingGemmaF32.mlpackage")
     converted.save(str(package))

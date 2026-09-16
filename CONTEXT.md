@@ -90,12 +90,48 @@ when assessing the mixed candidate:
   --quality-profile mixed-f16
 ```
 
+## iOS 18 4-Bit Exploration
+
+Core ML Tools requires an iOS 18 ML Program for int4 weight compression. The
+separate F32 iOS 18 source package in `artifacts/coreml/f32-512-ios18/` passed
+the ten-fixture CPU-only F32-parity assessment; its maximum elementwise error
+was approximately `4.34e-7`.
+
+The retained post-training 4-bit candidate is a lossy comparison candidate;
+its product acceptability requires a broader retrieval evaluation:
+
+- `artifacts/coreml/int4-512-attention-int8/` uses signed, symmetric,
+  per-block (32) linear int4 weights except for every Q/K/V/output attention
+  projection, which remains int8. It is about 216 MB; the 511- and 512-token
+  fixtures had cosine near `0.901` against the F32 baseline.
+
+The compression script requires an assessed F32 iOS 18 source and records
+source package, baseline, padded-fixture, and assessment hashes.
+
+## LiteRT Comparison
+
+The local `models/embeddinggemma-300M_seq512_mixed-precision.tflite` model is
+assessed with the locked `ai-edge-litert==2.1.6` runtime through `uv`. Its
+single `(1, 512)` int32 input receives the exact prompted, right-padded token
+IDs used by the F32 source export; it returns one `(1, 768)` float32 embedding.
+
+Its locked assessment is in
+`artifacts/litert/tflite-512-mixed-precision/assessments/initial-uv-2-1-6/`.
+Compared with the F32 baseline, short-fixture cosine is approximately
+`0.967`–`0.975`; the exact 511- and 512-token fixtures are approximately
+`0.859` and `0.855`. Despite that drift, the recorded Mars retrieval ordering
+is unchanged.
+
 The export layout is intentionally explicit:
 
 - `scripts/coreml/export_512_common.py` contains the checked model wrapper,
   finite-mask rule, reference capture, trace validation, and Core ML conversion.
-- `scripts/coreml/export_f32_512.py` selects F32 conversion.
-- `scripts/coreml/export_f16_512.py` selects the accepted mixed-FP16 conversion.
+- `scripts/coreml/export_f32_512.py` exports F32 conversion.
+- `scripts/coreml/export_f16_512.py` exports the accepted mixed-FP16 conversion.
+- `scripts/coreml/export_f32_512_ios18.py` exports the assessed F32 source
+  required by iOS 18 compression candidates.
+- `scripts/coreml/export_int4_512_attention_int8.py` exports the compressed
+  version of `f32-512-ios18` above.
 
 ## Input-Length Variants
 
@@ -129,6 +165,12 @@ hashes before inference.
   `padded-fixtures.npz`, and its initial assessment in `assessments/initial/`.
 - `artifacts/coreml/f16-512-mixed/`: the accepted mixed-FP16 package and its
   assessment evidence.
+- `artifacts/coreml/f32-512-ios18/`: the F32 iOS 18 source package and its
+  saved F32-parity assessment.
+- `artifacts/coreml/int4-512-attention-int8/`: the iOS 18 linear-int4,
+  attention-int8 comparison candidate and its descriptive assessment evidence.
+- `artifacts/litert/tflite-512-mixed-precision/`: assessment evidence for the
+  supplied mixed-precision LiteRT model; it is separate from Core ML artifacts.
 
 Every new assessment belongs in a fresh subdirectory beneath the package's
 `assessments/` directory. The export report records conversion; the assessment

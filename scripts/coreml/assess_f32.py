@@ -1,4 +1,4 @@
-"""Assess a float32 or float16 Core ML artifact against float32 baseline fixtures."""
+"""Assess a Core ML artifact against float32 baseline fixtures."""
 
 import argparse
 import hashlib
@@ -14,7 +14,9 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 BASELINE = ROOT / "artifacts/baseline-f32"
 # F32 parity is the strict control. Mixed FP16 has a separately approved
-# quality target; do not loosen the F32 profile to accommodate it.
+# quality target; do not loosen the F32 profile to accommodate it. Lossy
+# candidates can instead use --comparison-only to record metrics without an
+# invented acceptance threshold.
 QUALITY_PROFILES = {
     "f32-parity": {
         "atol": 1e-4,
@@ -35,7 +37,7 @@ def sha256(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def compare(actual, expected, profile):
+def compare(actual, expected, profile=None):
     if actual.shape != (1, 768):
         raise ValueError(f"Expected embedding shape (1, 768), got {actual.shape}")
     finite = np.isfinite(actual)
@@ -50,6 +52,8 @@ def compare(actual, expected, profile):
     cosine = float(np.sum(actual * expected) / (norm * np.linalg.norm(expected))) if norm else 0.0
     metrics = {"max_absolute_error": float(np.max(np.abs(actual - expected))),
                "cosine": cosine, "norm": norm}
+    if profile is None:
+        return metrics
     if "maximum_absolute_error" in profile:
         close_enough = metrics["max_absolute_error"] <= profile["maximum_absolute_error"]
     else:
@@ -62,7 +66,7 @@ def compare(actual, expected, profile):
     return metrics
 
 
-def run(package, output, report, sequence_length, profile):
+def run(package, output, report, sequence_length, profile=None):
     if not package.is_dir():
         raise FileNotFoundError(package)
     metadata = json.loads((BASELINE / "metadata.json").read_text())
@@ -111,7 +115,7 @@ def run(package, output, report, sequence_length, profile):
         raise ValueError("Unexpected fixture shapes")
     if not np.isfinite(expected).all():
         raise ValueError("Baseline embeddings contain non-finite values")
-    report["stage"] = "artifact_parity"
+    report["stage"] = "artifact_parity" if profile else "artifact_comparison"
     print(f"Reloading the saved Core ML artifact and checking {len(names)} fixtures", flush=True)
     artifact = ct.models.MLModel(str(package), compute_units=ct.ComputeUnit.CPU_ONLY)
     shapes = {item.name: list(item.type.multiArrayType.shape) for item in artifact.get_spec().description.input}
@@ -133,9 +137,13 @@ def run(package, output, report, sequence_length, profile):
     scores = outputs[[names.index(name) for name in documents]] @ outputs[query]
     ranking = [documents[i] for i in np.argsort(-scores)]
     report["retrieval"] = {"scores": scores.tolist(), "ranking": ranking}
-    if ranking != metadata["retrieval"]["ranking"] or not all(m["passed"] for m in report["cases"].values()):
+    if profile and (ranking != metadata["retrieval"]["ranking"]
+                    or not all(m["passed"] for m in report["cases"].values())):
         raise ValueError(f"Exported artifact failed {report['quality_profile']} acceptance; see report.json")
-    print(f"Core ML artifact passed {report['quality_profile']} acceptance. Output: {output}", flush=True)
+    if profile:
+        print(f"Core ML artifact passed {report['quality_profile']} acceptance. Output: {output}", flush=True)
+    else:
+        print(f"Core ML artifact comparison recorded. Output: {output}", flush=True)
 
 
 def main():
@@ -143,9 +151,15 @@ def main():
     parser.add_argument("package", type=Path, help="Path to the saved .mlpackage")
     parser.add_argument("--sequence-length", type=int, choices=(128, 512), default=128)
     parser.add_argument("--output-dir", type=Path)
-    parser.add_argument("--quality-profile", choices=tuple(QUALITY_PROFILES), default="f32-parity",
-                        help="Acceptance target; mixed-f16 preserves the strict F32 profile as a control")
+    parser.add_argument("--quality-profile", choices=tuple(QUALITY_PROFILES),
+                        help="Acceptance target; defaults to f32-parity unless --comparison-only is used")
+    parser.add_argument("--comparison-only", action="store_true",
+                        help="Record metrics and retrieval ranking without applying an acceptance threshold")
     args = parser.parse_args()
+    if args.comparison_only and args.quality_profile:
+        parser.error("--comparison-only cannot be used with --quality-profile")
+    if not args.comparison_only and args.quality_profile is None:
+        args.quality_profile = "f32-parity"
     package = args.package.resolve()
     output = (args.output_dir or package.parent / "assessments/manual").resolve()
     if output.exists():
@@ -155,15 +169,17 @@ def main():
         "python": platform.python_version(), "platform": platform.platform(),
         "packages": {name: importlib.metadata.version(name) for name in ("coremltools", "numpy")},
         "script_sha256": sha256(Path(__file__)), "compute_units": "CPU_ONLY",
+        "comparison_mode": "descriptive" if args.comparison_only else "acceptance",
         "quality_profile": args.quality_profile,
-        "thresholds": QUALITY_PROFILES[args.quality_profile],
+        "thresholds": QUALITY_PROFILES.get(args.quality_profile),
         "limitations": "Only fixtures fitting the selected length; no longer-sequence or device validation.",
     }
     output.mkdir(parents=True)
     try:
         report["input_shape"] = [1, args.sequence_length]
-        run(package, output, report, args.sequence_length, QUALITY_PROFILES[args.quality_profile])
-        report["status"] = "passed"
+        profile = None if args.comparison_only else QUALITY_PROFILES[args.quality_profile]
+        run(package, output, report, args.sequence_length, profile)
+        report["status"] = "assessed" if args.comparison_only else "passed"
     except Exception as error:
         report["status"] = "failed"
         report["error"] = f"{type(error).__name__}: {error}"
