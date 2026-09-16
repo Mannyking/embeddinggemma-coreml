@@ -22,6 +22,10 @@ Core ML package. The package accepts already-tokenized `input_ids` and an
 - **Assessment:** Loading a saved `.mlpackage`, running its baseline inputs,
   and comparing its actual outputs to expected embeddings.
 - **f32:** Float32 computation and model weights for this experiment.
+- **mixed f16:** A Core ML conversion that uses FP16 for `gather` and `linear`
+  operations only. Attention, softmax, normalization, residual arithmetic, and
+  pooling remain float32. Inputs remain int32, embeddings are returned as
+  float32, and the reference pipeline remains float32.
 
 ## Evidence Flow
 
@@ -53,6 +57,46 @@ These results establish parity for the recorded fixtures on macOS CPU only.
 They do not establish behavior beyond the selected input length, iOS behavior,
 performance, memory use, or Neural Engine execution.
 
+## Mixed-FP16 Result
+
+All-FP16 conversion is known to be unstable for this model: the original
+blocked-mask sentinel overflows to negative infinity in FP16, and a
+finite-sentinel all-FP16 experiment still became non-finite by the final RMS
+norm. The failed trial artifacts and one-off diagnostic tools were removed once
+they established that the mixed policy is required.
+
+The accepted candidate uses the `mixed` policy: only Core ML `gather` and
+`linear` operations are selected for FP16 conversion; attention, softmax, RMS
+normalization, residual arithmetic, and pooling remain float32. It also uses a
+finite blocked-attention sentinel of `-65504`, preserving the upstream allowed
+and blocked positions without creating FP16 negative infinity.
+
+Its saved package is in `artifacts/coreml/f16-512-mixed/`. CPU assessment over
+all ten fixtures found finite, unit-normalized embeddings, unchanged Mars
+retrieval ranking, cosine similarity from `0.999911` to `0.999960`, and maximum
+absolute error from `0.00136` to `0.00311`. The package is about 592 MB, versus
+about 1.2 GB for F32.
+
+The strict `f32-parity` profile deliberately rejects that artifact because it
+requires F32-level numerical agreement. The separately approved `mixed-f16`
+profile retains cosine at least `0.9999`, norm error at most `1e-4`, unchanged
+retrieval ranking, and adds a maximum absolute error limit of `0.01`. Use it
+when assessing the mixed candidate:
+
+```sh
+.venv/bin/python scripts/coreml/assess_f32.py \
+  artifacts/coreml/f16-512-mixed/EmbeddingGemmaF16.mlpackage \
+  --sequence-length 512 \
+  --quality-profile mixed-f16
+```
+
+The export layout is intentionally explicit:
+
+- `scripts/coreml/export_512_common.py` contains the checked model wrapper,
+  finite-mask rule, reference capture, trace validation, and Core ML conversion.
+- `scripts/coreml/export_f32_512.py` selects F32 conversion.
+- `scripts/coreml/export_f16_512.py` selects the accepted mixed-FP16 conversion.
+
 ## Input-Length Variants
 
 The original model accepts up to 2,048 tokens. Core ML exports are intentionally
@@ -83,6 +127,8 @@ hashes before inference.
   export report.
 - `artifacts/coreml/f32-512/`: the 512 package, `export-report.json`,
   `padded-fixtures.npz`, and its initial assessment in `assessments/initial/`.
+- `artifacts/coreml/f16-512-mixed/`: the accepted mixed-FP16 package and its
+  assessment evidence.
 
 Every new assessment belongs in a fresh subdirectory beneath the package's
 `assessments/` directory. The export report records conversion; the assessment

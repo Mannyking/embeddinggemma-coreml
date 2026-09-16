@@ -25,10 +25,17 @@ The current work is about conversion correctness on macOS. It does not yet make
 claims about iOS deployment, latency, memory use, Neural Engine placement, or
 the best input length for product content.
 
+## Current Result
+
+The current 512-token mixed-FP16 package is about **592 MB**, compared with
+about **1.2 GB** for the float32 package—roughly half the size.
+
+The conversion and validation details are recorded in `CONTEXT.md`.
+
 ## Further Reading
 
 - [CONTEXT.md](CONTEXT.md): workflow, current evidence, artifacts, and limits.
-- `AGENTS.md`: preservation rules for contributors and coding agents.
+- `AGENTS.md`: preservation rules for the agent.
 - `model-source.json`: the pinned upstream model revision and local-file hashes.
 
 ## Sources

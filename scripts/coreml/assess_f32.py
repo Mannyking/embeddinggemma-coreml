@@ -1,4 +1,4 @@
-"""Assess a fixed-shape Core ML artifact against float32 baseline fixtures."""
+"""Assess a float32 or float16 Core ML artifact against float32 baseline fixtures."""
 
 import argparse
 import hashlib
@@ -13,11 +13,21 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
 BASELINE = ROOT / "artifacts/baseline-f32"
-# Initial acceptance thresholds, fixed before evaluating the exported artifact.
-ATOL = 1e-4
-RTOL = 1e-3
-MIN_COSINE = 0.9999
-NORM_ATOL = 1e-4
+# F32 parity is the strict control. Mixed FP16 has a separately approved
+# quality target; do not loosen the F32 profile to accommodate it.
+QUALITY_PROFILES = {
+    "f32-parity": {
+        "atol": 1e-4,
+        "rtol": 1e-3,
+        "minimum_cosine": 0.9999,
+        "unit_norm_atol": 1e-4,
+    },
+    "mixed-f16": {
+        "maximum_absolute_error": 0.01,
+        "minimum_cosine": 0.9999,
+        "unit_norm_atol": 1e-4,
+    },
+}
 
 
 def sha256(path):
@@ -25,21 +35,34 @@ def sha256(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def compare(actual, expected):
-    if actual.shape != (1, 768) or not np.isfinite(actual).all():
-        raise ValueError(f"Invalid embedding shape or values: {actual.shape}")
+def compare(actual, expected, profile):
+    if actual.shape != (1, 768):
+        raise ValueError(f"Expected embedding shape (1, 768), got {actual.shape}")
+    finite = np.isfinite(actual)
+    if not finite.all():
+        nan_count = int(np.isnan(actual).sum())
+        inf_count = int(np.isinf(actual).sum())
+        raise ValueError(
+            f"Non-finite embedding values: {nan_count} NaN, {inf_count} infinity "
+            f"out of {actual.size} values"
+        )
     norm = float(np.linalg.norm(actual))
     cosine = float(np.sum(actual * expected) / (norm * np.linalg.norm(expected))) if norm else 0.0
     metrics = {"max_absolute_error": float(np.max(np.abs(actual - expected))),
                "cosine": cosine, "norm": norm}
+    if "maximum_absolute_error" in profile:
+        close_enough = metrics["max_absolute_error"] <= profile["maximum_absolute_error"]
+    else:
+        close_enough = np.allclose(actual, expected, atol=profile["atol"], rtol=profile["rtol"])
     metrics["passed"] = bool(
-        np.allclose(actual, expected, atol=ATOL, rtol=RTOL)
-        and abs(norm - 1.0) <= NORM_ATOL and cosine >= MIN_COSINE
+        close_enough
+        and abs(norm - 1.0) <= profile["unit_norm_atol"]
+        and cosine >= profile["minimum_cosine"]
     )
     return metrics
 
 
-def run(package, output, report, sequence_length):
+def run(package, output, report, sequence_length, profile):
     if not package.is_dir():
         raise FileNotFoundError(package)
     metadata = json.loads((BASELINE / "metadata.json").read_text())
@@ -51,6 +74,7 @@ def run(package, output, report, sequence_length):
     report["baseline_revision"] = metadata["revision"]
     report["package_hashes"] = {p.relative_to(package).as_posix(): sha256(p)
                                 for p in sorted(package.rglob("*")) if p.is_file()}
+    report["package_size_bytes"] = sum(p.stat().st_size for p in package.rglob("*") if p.is_file())
     if sequence_length == 128:
         with np.load(fixtures_path, allow_pickle=False) as data:
             ids = data["padded_128__input_ids"].astype(np.int32)
@@ -67,6 +91,9 @@ def run(package, output, report, sequence_length):
             raise ValueError("Export used different baseline metadata")
         if export["package_hashes"] != report["package_hashes"]:
             raise ValueError("Package differs from the recorded export")
+        report["export_precision"] = export["precision"]
+        report["fp16_policy"] = export.get("fp16_policy")
+        report["export_report_sha256"] = sha256(package.parent / "export-report.json")
         expected_padded_hash = export.get("padded_fixtures_sha256", export.get("padded_reference_sha256"))
         if sha256(padded_fixtures_path) != expected_padded_hash:
             raise ValueError("512-token padded-fixture hash mismatch")
@@ -95,7 +122,7 @@ def run(package, output, report, sequence_length):
     for i, name in enumerate(names):
         actual = np.asarray(artifact.predict({"input_ids": ids[i:i+1],
                                               "attention_mask": masks[i:i+1]})["embedding"])
-        metrics = compare(actual, expected[i:i+1])
+        metrics = compare(actual, expected[i:i+1], profile)
         report["cases"][name] = metrics
         outputs.append(actual[0])
         print(f"{name}: {metrics}", flush=True)
@@ -107,8 +134,8 @@ def run(package, output, report, sequence_length):
     ranking = [documents[i] for i in np.argsort(-scores)]
     report["retrieval"] = {"scores": scores.tolist(), "ranking": ranking}
     if ranking != metadata["retrieval"]["ranking"] or not all(m["passed"] for m in report["cases"].values()):
-        raise ValueError("Exported artifact failed baseline parity; see report.json")
-    print(f"Core ML artifact baseline parity passed. Output: {output}", flush=True)
+        raise ValueError(f"Exported artifact failed {report['quality_profile']} acceptance; see report.json")
+    print(f"Core ML artifact passed {report['quality_profile']} acceptance. Output: {output}", flush=True)
 
 
 def main():
@@ -116,6 +143,8 @@ def main():
     parser.add_argument("package", type=Path, help="Path to the saved .mlpackage")
     parser.add_argument("--sequence-length", type=int, choices=(128, 512), default=128)
     parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--quality-profile", choices=tuple(QUALITY_PROFILES), default="f32-parity",
+                        help="Acceptance target; mixed-f16 preserves the strict F32 profile as a control")
     args = parser.parse_args()
     package = args.package.resolve()
     output = (args.output_dir or package.parent / "assessments/manual").resolve()
@@ -126,14 +155,14 @@ def main():
         "python": platform.python_version(), "platform": platform.platform(),
         "packages": {name: importlib.metadata.version(name) for name in ("coremltools", "numpy")},
         "script_sha256": sha256(Path(__file__)), "compute_units": "CPU_ONLY",
-        "thresholds": {"atol": ATOL, "rtol": RTOL, "minimum_cosine": MIN_COSINE,
-                       "unit_norm_atol": NORM_ATOL},
-        "limitations": "Only fixtures fitting the selected length; no beyond-window or device validation.",
+        "quality_profile": args.quality_profile,
+        "thresholds": QUALITY_PROFILES[args.quality_profile],
+        "limitations": "Only fixtures fitting the selected length; no longer-sequence or device validation.",
     }
     output.mkdir(parents=True)
     try:
         report["input_shape"] = [1, args.sequence_length]
-        run(package, output, report, args.sequence_length)
+        run(package, output, report, args.sequence_length, QUALITY_PROFILES[args.quality_profile])
         report["status"] = "passed"
     except Exception as error:
         report["status"] = "failed"
