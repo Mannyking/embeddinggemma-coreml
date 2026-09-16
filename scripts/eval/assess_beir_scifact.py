@@ -35,6 +35,13 @@ def files_sha256(directory):
     }
 
 
+def dataset_hashes(path):
+    required = (path / "corpus.jsonl", path / "queries.jsonl", path / "qrels" / "test.tsv")
+    hashes = {item.relative_to(path).as_posix(): sha256(item) for item in required}
+    identity = hashlib.sha256(json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return hashes, identity
+
+
 def verify_model():
     source_path = MODEL_RECEIPT
     source = json.loads(source_path.read_text())
@@ -183,9 +190,10 @@ def run(args, output, report):
                         "int4_attention_int8": verify_package(args.candidate_package)}
     report["stage"] = "load_dataset"
     path, corpus, queries, qrels = load_dataset(args.dataset_dir)
+    hashes, identity = dataset_hashes(path)
     report["dataset"] = {"name": DATASET, "url": DATASET_URL, "path": str(path), "split": "test",
                          "corpus_records": len(corpus), "query_records": len(queries),
-                         "checksum": "not recorded by request"}
+                         "files_sha256": hashes, "content_sha256": identity}
     config = json.loads((MODEL / "config_sentence_transformers.json").read_text())
     tokenizer = AutoTokenizer.from_pretrained(str(MODEL), local_files_only=True)
     if tokenizer.padding_side != "right":

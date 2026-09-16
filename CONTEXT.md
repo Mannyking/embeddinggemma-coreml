@@ -126,9 +126,10 @@ is unchanged.
 
 `scripts/eval/assess_beir_scifact.py` compares the saved iOS 18 F32 package
 with the int4/int8-attention candidate on BEIR's normalized SciFact test set.
-It downloads data to Git-ignored `datasets/beir/`, does not record a dataset
-checksum, and writes a fresh assessment directory containing embeddings,
-metrics, and per-query ranking differences.
+It downloads data to Git-ignored `datasets/beir/` and records SHA-256 hashes
+for the corpus, queries, and qrels files plus a deterministic aggregate
+checksum. It writes a fresh assessment directory containing embeddings, metrics,
+and per-query ranking differences.
 
 It preserves EmbeddingGemma's query/document prompts and right padding. Empty
 records and records above 512 prompted tokens are rejected. It reports Recall@1/5/10, nDCG@1/5/10, MRR@10, metric deltas, and top-ten ranking overlap.
@@ -139,12 +140,6 @@ test claims. The int4/int8-attention candidate scored `0.8882` Recall@10,
 `0.7488`, and `0.7102`, respectively. This supports the candidate for this
 public retrieval comparison, but is not an F32-parity or device-performance
 claim.
-
-`scripts/eval/assess_litert_beir_scifact.py` reuses that saved Core ML
-assessment and runs the local LiteRT model on the identical prepared inputs.
-Its initial result scored `0.8910` Recall@10, `0.7373` nDCG@10, and `0.6958`
-MRR@10. LiteRT has slightly broader top-ten recall, while the Core ML candidate
-is modestly closer to F32 at the top of the ranking.
 
 The export layout is intentionally explicit:
 
@@ -158,8 +153,6 @@ The export layout is intentionally explicit:
   version of `f32-512-ios18` above.
 - `scripts/eval/assess_beir_scifact.py` compares the saved F32 and quantized
   packages on BEIR SciFact.
-- `scripts/eval/assess_litert_beir_scifact.py` adds LiteRT to that saved
-  SciFact comparison without repeating Core ML inference.
 
 ## Input-Length Variants
 
@@ -177,10 +170,14 @@ or chunked by the caller; they must never be silently truncated for evaluation.
 
 ## Source Model Identity
 
-`model-source.json` is the model-source receipt. It records
-the upstream repository, immutable revision, and hashes of every downloaded
-model, configuration, and tokenizer file. The baseline and exports verify those
-hashes before inference.
+`models/receipts/embeddinggemma-300m.json` is the original-model receipt. It
+records the upstream repository, immutable revision, and hashes of every
+downloaded model, configuration, and tokenizer file. Separate receipts identify
+externally supplied comparison models. In particular,
+`models/receipts/litert-512-mixed-precision.json` records a mutable upstream
+ref but pins the assessed local file by SHA-256. The baseline and exports verify
+the original-model receipt before inference, and the LiteRT fixture assessment
+verifies its own receipt.
 
 ## Current Artifacts
 
