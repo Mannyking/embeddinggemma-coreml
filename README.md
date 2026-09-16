@@ -33,6 +33,22 @@ about **1.2 GB** for the float32 package.
 The retained iOS 18 post-training 4-bit (linear-int4/int8-attention) package
 is about 216 MB.
 
+## Retrieval Evaluation
+
+On BEIR SciFact, both the 216 MB Core ML int4/int8-attention package and the
+171 MiB LiteRT package retained close retrieval quality to F32 across 252
+eligible claims and 4,799 abstracts. Records above the fixed 512-token limit
+were excluded.
+
+| Metric | F32 | Core ML int4/int8 | LiteRT |
+| --- | ---: | ---: | ---: |
+| Recall@1 | 0.5742 | 0.5671 | 0.5603 |
+| Recall@10 | 0.8878 | 0.8882 | 0.8910 |
+| nDCG@10 | 0.7488 | 0.7414 | 0.7373 |
+| MRR@10 | 0.7102 | 0.7037 | 0.6958 |
+
+LiteRT's embeddinggemma version was included as it's the current model used on the Android side.
+
 ## Platform Compatibility
 
 The existing F32 and mixed-FP16 Core ML packages require iOS/iPadOS 15 or

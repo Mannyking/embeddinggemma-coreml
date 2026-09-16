@@ -122,6 +122,30 @@ Compared with the F32 baseline, short-fixture cosine is approximately
 `0.859` and `0.855`. Despite that drift, the recorded Mars retrieval ordering
 is unchanged.
 
+## SciFact Retrieval Evaluation
+
+`scripts/eval/assess_beir_scifact.py` compares the saved iOS 18 F32 package
+with the int4/int8-attention candidate on BEIR's normalized SciFact test set.
+It downloads data to Git-ignored `datasets/beir/`, does not record a dataset
+checksum, and writes a fresh assessment directory containing embeddings,
+metrics, and per-query ranking differences.
+
+It preserves EmbeddingGemma's query/document prompts and right padding. Empty
+records and records above 512 prompted tokens are rejected. It reports Recall@1/5/10, nDCG@1/5/10, MRR@10, metric deltas, and top-ten ranking overlap.
+
+The initial run embedded 4,799 eligible abstracts and evaluated 252 eligible
+test claims. The int4/int8-attention candidate scored `0.8882` Recall@10,
+`0.7414` nDCG@10, and `0.7037` MRR@10; the F32 source scored `0.8878`,
+`0.7488`, and `0.7102`, respectively. This supports the candidate for this
+public retrieval comparison, but is not an F32-parity or device-performance
+claim.
+
+`scripts/eval/assess_litert_beir_scifact.py` reuses that saved Core ML
+assessment and runs the local LiteRT model on the identical prepared inputs.
+Its initial result scored `0.8910` Recall@10, `0.7373` nDCG@10, and `0.6958`
+MRR@10. LiteRT has slightly broader top-ten recall, while the Core ML candidate
+is modestly closer to F32 at the top of the ranking.
+
 The export layout is intentionally explicit:
 
 - `scripts/coreml/export_512_common.py` contains the checked model wrapper,
@@ -132,6 +156,10 @@ The export layout is intentionally explicit:
   required by iOS 18 compression candidates.
 - `scripts/coreml/export_int4_512_attention_int8.py` exports the compressed
   version of `f32-512-ios18` above.
+- `scripts/eval/assess_beir_scifact.py` compares the saved F32 and quantized
+  packages on BEIR SciFact.
+- `scripts/eval/assess_litert_beir_scifact.py` adds LiteRT to that saved
+  SciFact comparison without repeating Core ML inference.
 
 ## Input-Length Variants
 

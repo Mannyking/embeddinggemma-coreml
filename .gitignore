@@ -1,6 +1,7 @@
 .venv/
 models/
 artifacts/
+datasets/
 __pycache__/
 *.py[cod]
 .DS_Store
