@@ -1,9 +1,7 @@
 # EmbeddingGemma → Core ML
 
-Standalone experiment to convert Google's official `embeddinggemma-300m`
-checkpoint into a Core ML text embedder for Tinkeroom on iOS. It is intentionally
-independent from the app: this repository establishes whether the model can be
-converted correctly before any product integration or device optimization.
+Experiment to convert Google's official `embeddinggemma-300m`
+checkpoint into a Core ML text embedder for Tinkeroom on iOS.
 
 ## The Idea
 
@@ -21,6 +19,9 @@ original model → baseline → Core ML package → parity assessment
 The Core ML package receives already-tokenized IDs and an attention mask. The
 caller remains responsible for tokenization and query/document prompts; the
 package returns one normalized 768-dimensional embedding.
+
+Prebuilt Core ML packages and tokenizer assets on HuggingFace:
+[Mannyking/embeddinggemma-coreml](https://huggingface.co/Mannyking/embeddinggemma-coreml)
 
 ## Results and Evaluation
 
@@ -44,6 +45,10 @@ were excluded.
 | Core ML F32 | 1,235.3 MB | 0.5742 | 0.8878 | 0.7488 | 0.7102 |
 | Core ML int4 / attention int8 | 216.5 MB | 0.5671 | 0.8882 | 0.7414 | 0.7037 |
 | LiteRT mixed precision | 179.1 MB | 0.5603 | 0.8910 | 0.7373 | 0.6958 |
+
+This is a quick, single-dataset retrieval check added to catch large quality
+regressions from conversion or quantization. It serves as a high-level review
+that the model is performant to some extent.
 
 LiteRT's embeddinggemma version was included as it's the current model used on the Android side.
 
@@ -85,6 +90,15 @@ uv run python scripts/coreml/assess_f32.py \
 The above scripts ensure you download the tested OG-model after which a quick test
 and baseline capture follows. A 512 input-token model is created and then assessed
 with the final command. Rest of the scripts work similarly.
+
+## License and Model Artifacts
+
+The source code and documentation in this repository are licensed under the
+[Apache License 2.0](LICENSE). This repository does not distribute model
+weights or converted model packages.
+
+The original EmbeddingGemma checkpoint and any converted or quantized packages
+are subject to Google's [Gemma Terms of Use](https://ai.google.dev/gemma/terms).
 
 ## Further Reading
 

@@ -208,3 +208,4 @@ report records results from loading and predicting with the saved package.
   known limits.
 - `AGENTS.md` contains compact operational rules for people and coding agents
   changing the experiment.
+- `LICENSE` covers this repository's source code and documentation.
